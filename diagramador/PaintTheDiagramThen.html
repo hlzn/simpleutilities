@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DB Schema Diagram</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0d1117;
+      --surface:      #161b22;
+      --surface-2:    #1c2128;
+      --border:       #30363d;
+      --border-hi:    #484f58;
+      --text-primary: #e6edf3;
+      --text-dim:     #8b949e;
+      --text-muted:   #484f58;
+      --accent:       #2f81f7;
+      --accent-glow:  rgba(47, 129, 247, 0.15);
+      --pk:           #f0883e;
+      --fk:           #58a6ff;
+      --nullable:     #3fb950;
+      --link:         rgba(47, 129, 247, 0.55);
+      --link-hi:      rgba(47, 129, 247, 0.9);
+    }
+
+    body {
+      background: var(--bg);
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+    }
+
+    /* ── HUD ─────────────────────────────────────────── */
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #title-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #title-block h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.04em;
+    }
+
+    #stats {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* ── Controls ─────────────────────────────────────── */
+    #controls {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-end;
+    }
+
+    .control-group {
+      display: flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+    }
+
+    .ctrl-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 13px;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .ctrl-btn:hover {
+      background: var(--surface-2);
+      border-color: var(--border);
+      color: var(--text-primary);
+    }
+
+    .ctrl-btn.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    #hint {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Modal ────────────────────────────────────────── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(1, 4, 9, 0.85);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: min(680px, calc(100vw - 40px));
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+      overflow: hidden;
+    }
+
+    #modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 22px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #modal-header h2 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.04em;
+    }
+
+    #modal-header p {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 3px;
+    }
+
+    #modal-body {
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #modal-body label {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    #schema-input {
+      width: 100%;
+      height: 260px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      padding: 12px 14px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #schema-input:focus {
+      border-color: var(--accent);
+    }
+
+    #schema-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    #modal-error {
+      font-size: 11px;
+      color: #f85149;
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 16px;
+      display: none;
+    }
+
+    #modal-footer {
+      padding: 14px 22px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    #modal-footer-hint {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1.5;
+    }
+
+    #modal-footer-hint span {
+      color: var(--text-dim);
+    }
+
+    .modal-btn {
+      border-radius: 7px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 8px 20px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    #btn-load-schema {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    #btn-load-schema:hover {
+      background: #388bfd;
+      border-color: #388bfd;
+    }
+
+    #btn-use-sample {
+      background: transparent;
+      color: var(--text-dim);
+      border-color: var(--border);
+    }
+
+    #btn-use-sample:hover {
+      border-color: var(--border-hi);
+      color: var(--text-primary);
+    }
+
+    /* ── SVG & diagram ────────────────────────────────── */
+    svg {
+      width: 100vw;
+      height: 100vh;
+      cursor: grab;
+    }
+
+    svg:active { cursor: grabbing; }
+
+    /* Table styles applied via SVG attrs in JS */
+  </style>
+</head>
+<body>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="title-block">
+
+    <h1>DB SCHEMA DIAGRAM</h1>
+  </div>
+  <div id="stats"></div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <div id="hint">scroll to zoom · drag canvas to pan · drag tables to reposition</div>
+  <div class="control-group">
+    <button class="ctrl-btn" id="btn-fit" title="Fit to screen">⤢</button>
+    <button class="ctrl-btn" id="btn-relax" title="Re-run layout">↺</button>
+    <button class="ctrl-btn" id="btn-export" title="Export SVG">↓</button>
+  </div>
+  <div class="control-group">
+    <button class="ctrl-btn" id="btn-zoom-in" title="Zoom in">+</button>
+    <button class="ctrl-btn" id="btn-zoom-out" title="Zoom out">−</button>
+  </div>
+</div>
+
+<!-- Schema Input Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <div id="modal-header">
+      <div>
+        <h2>LOAD DATABASE SCHEMA</h2>
+        <p>Paste the output from <code style="color:#58a6ff;font-size:10px;">extract_schema.sql</code> — raw SSMS output or a JSON object</p>
+      </div>
+    </div>
+    <div id="modal-body">
+      <label for="schema-input">SCHEMA OUTPUT</label>
+      <textarea
+        id="schema-input"
+        spellcheck="false"
+        placeholder="Paste your SSMS output here...
+
+The script outputs two blocks like:
+  --- TABLES ---
+  [{ ... }]
+  --- RELATIONSHIPS ---
+  [{ ... }]
+
+You can paste that entire output as-is, or paste a
+JSON object like: { &quot;tables&quot;: [...], &quot;relationships&quot;: [...] }"
+      ></textarea>
+      <div id="modal-error"></div>
+    </div>
+    <div id="modal-footer">
+      <div id="modal-footer-hint">
+        <span>Tip:</span> In SSMS use Ctrl+T (Results to Text)<br>
+        to avoid JSON truncation before running the SQL script
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="modal-btn" id="btn-use-sample">Use sample data</button>
+        <button class="modal-btn" id="btn-load-schema">Draw diagram →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<svg id="diagram">
+  <defs>
+    <!-- Relationship arrow -->
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M 0 0 L 7 3 L 0 6" fill="none" stroke="#2f81f7" stroke-width="1.2" stroke-opacity="0.8"/>
+    </marker>
+    <marker id="arrow-hi" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M 0 0 L 7 3 L 0 6" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
+    </marker>
+
+    <!-- Dot for the "many" side (origin of FK) -->
+    <marker id="dot" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+      <circle cx="3" cy="3" r="2" fill="#2f81f7" opacity="0.7"/>
+    </marker>
+
+    <!-- Grid background pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#21262d" stroke-width="0.5"/>
+    </pattern>
+
+    <!-- Glow filter for selected/hovered tables -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background grid -->
+  <rect width="100%" height="100%" fill="url(#grid)" id="bg-rect"/>
+
+  <!-- Everything zoom/pan-able sits here -->
+  <g id="zoom-layer">
+    <g id="links-layer"></g>
+    <g id="nodes-layer"></g>
+  </g>
+</svg>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+// ================================================================
+//  SAMPLE SCHEMA
+// ================================================================
+const SAMPLE_SCHEMA = {
+  tables: [
+    { name: "Customers",  columns: [
+        { name: "Id",         type: "int",      isPK: 1, isNullable: "NO" },
+        { name: "Name",       type: "varchar",  isPK: 0, isNullable: "NO",  maxLength: 100 },
+        { name: "Email",      type: "varchar",  isPK: 0, isNullable: "YES", maxLength: 200 },
+        { name: "Country",    type: "char",     isPK: 0, isNullable: "YES", maxLength: 2   }
+    ]},
+    { name: "Orders", columns: [
+        { name: "Id",         type: "int",      isPK: 1, isNullable: "NO" },
+        { name: "CustomerId", type: "int",      isPK: 0, isNullable: "NO" },
+        { name: "OrderDate",  type: "datetime", isPK: 0, isNullable: "NO" },
+        { name: "Total",      type: "decimal",  isPK: 0, isNullable: "NO" },
+        { name: "Status",     type: "varchar",  isPK: 0, isNullable: "NO",  maxLength: 30 }
+    ]},
+    { name: "OrderItems", columns: [
+        { name: "Id",         type: "int",     isPK: 1, isNullable: "NO" },
+        { name: "OrderId",    type: "int",     isPK: 0, isNullable: "NO" },
+        { name: "ProductId",  type: "int",     isPK: 0, isNullable: "NO" },
+        { name: "Qty",        type: "int",     isPK: 0, isNullable: "NO" },
+        { name: "Price",      type: "decimal", isPK: 0, isNullable: "NO" }
+    ]},
+    { name: "Products", columns: [
+        { name: "Id",         type: "int",     isPK: 1, isNullable: "NO" },
+        { name: "Name",       type: "varchar", isPK: 0, isNullable: "NO",  maxLength: 150 },
+        { name: "CategoryId", type: "int",     isPK: 0, isNullable: "YES" },
+        { name: "Price",      type: "decimal", isPK: 0, isNullable: "NO" },
+        { name: "Stock",      type: "int",     isPK: 0, isNullable: "NO" }
+    ]},
+    { name: "Categories", columns: [
+        { name: "Id",   type: "int",     isPK: 1, isNullable: "NO" },
+        { name: "Name", type: "varchar", isPK: 0, isNullable: "NO", maxLength: 80 }
+    ]}
+  ],
+  relationships: [
+    { fromTable: "Orders",     fromColumn: "CustomerId", toTable: "Customers",  toColumn: "Id" },
+    { fromTable: "OrderItems", fromColumn: "OrderId",    toTable: "Orders",     toColumn: "Id" },
+    { fromTable: "OrderItems", fromColumn: "ProductId",  toTable: "Products",   toColumn: "Id" },
+    { fromTable: "Products",   fromColumn: "CategoryId", toTable: "Categories", toColumn: "Id" }
+  ]
+};
+
+// ================================================================
+//  SCHEMA PARSING
+//  Accepts:
+//  1. Raw SSMS output with --- TABLES --- / --- RELATIONSHIPS --- markers
+//  2. A JSON object: { "tables": [...], "relationships": [...] }
+//  3. Two bare JSON arrays separated by whitespace
+// ================================================================
+
+// Finds the closing ] that matches the [ at index `start`
+function findArrayEnd(str, start) {
+  let depth = 0, inStr = false, escape = false;
+  for (let i = start; i < str.length; i++) {
+    const ch = str[i];
+    if (escape)                  { escape = false; continue; }
+    if (ch === '\\' && inStr)    { escape = true;  continue; }
+    if (ch === '"')              { inStr = !inStr;  continue; }
+    if (inStr)                   continue;
+    if      (ch === '[') depth++;
+    else if (ch === ']') { depth--; if (depth === 0) return i; }
+  }
+  throw new Error('Unmatched [ in input.');
+}
+
+function parseSchemaInput(raw) {
+  const text = raw.trim();
+  if (!text) throw new Error('Input is empty.');
+
+  const tablesMarker = /---\s*TABLES\s*---/i;
+  const relsMarker   = /---\s*RELATIONSHIPS\s*---/i;
+
+  // Format 1 — raw SSMS output
+  if (tablesMarker.test(text) && relsMarker.test(text)) {
+    const tHeaderMatch = tablesMarker.exec(text);
+    const rHeaderMatch = relsMarker.exec(text);
+    const tStart = text.indexOf('[', tHeaderMatch.index);
+    const rStart = text.indexOf('[', rHeaderMatch.index);
+    if (tStart === -1) throw new Error('Found --- TABLES --- but no JSON array followed it.');
+    if (rStart === -1) throw new Error('Found --- RELATIONSHIPS --- but no JSON array followed it.');
+    return {
+      tables:        JSON.parse(text.slice(tStart, findArrayEnd(text, tStart) + 1)),
+      relationships: JSON.parse(text.slice(rStart, findArrayEnd(text, rStart) + 1))
+    };
+  }
+
+  // Format 2 — { tables, relationships } object
+  if (text.startsWith('{')) {
+    const obj = JSON.parse(text);
+    if (!Array.isArray(obj.tables))        throw new Error('JSON object must have a "tables" array.');
+    if (!Array.isArray(obj.relationships)) throw new Error('JSON object must have a "relationships" array.');
+    return obj;
+  }
+
+  // Format 3 — two bare arrays
+  if (text.startsWith('[')) {
+    const firstEnd = findArrayEnd(text, 0);
+    const tables   = JSON.parse(text.slice(0, firstEnd + 1));
+    const rest     = text.slice(firstEnd + 1).trim();
+    if (!rest.startsWith('[')) throw new Error('Expected a second JSON array for relationships after the tables array.');
+    return { tables, relationships: JSON.parse(rest) };
+  }
+
+  throw new Error('Unrecognized format. Paste SSMS output or a JSON object/array.');
+}
+
+// ================================================================
+//  MODAL WIRING  (runs once on page load)
+// ================================================================
+const overlay     = document.getElementById('modal-overlay');
+const errorEl     = document.getElementById('modal-error');
+const schemaInput = document.getElementById('schema-input');
+
+function showError(msg) {
+  errorEl.textContent = '\u26a0 ' + msg;
+  errorEl.style.display = 'block';
+  schemaInput.style.borderColor = '#f85149';
+}
+function clearError() {
+  errorEl.style.display = 'none';
+  schemaInput.style.borderColor = '';
+}
+function dismissModal() {
+  overlay.style.opacity = '0';
+  overlay.style.transition = 'opacity 0.25s';
+  setTimeout(() => { overlay.style.display = 'none'; }, 250);
+}
+
+document.getElementById('btn-load-schema').addEventListener('click', () => {
+  clearError();
+  let schema;
+  try   { schema = parseSchemaInput(schemaInput.value); }
+  catch (e) { showError(e.message); return; }
+  dismissModal();
+  initDiagram(schema);
+});
+
+document.getElementById('btn-use-sample').addEventListener('click', () => {
+  dismissModal();
+  initDiagram(SAMPLE_SCHEMA);
+});
+
+schemaInput.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter')
+    document.getElementById('btn-load-schema').click();
+});
+
+// ── Reload button (shown after first diagram is drawn) ────────────
+const reloadBtn = document.createElement('button');
+reloadBtn.className   = 'ctrl-btn';
+reloadBtn.title       = 'Load new schema';
+reloadBtn.textContent = '\u2397';
+reloadBtn.style.display = 'none';
+reloadBtn.addEventListener('click', () => {
+  if (activeSimulation) { activeSimulation.stop(); activeSimulation = null; }
+  d3.select('#nodes-layer').selectAll('*').remove();
+  d3.select('#links-layer').selectAll('*').remove();
+  document.getElementById('stats').textContent = '';
+  clearError();
+  overlay.style.opacity   = '1';
+  overlay.style.transition = '';
+  overlay.style.display   = 'flex';
+  reloadBtn.style.display = 'none';
+});
+document.querySelector('.control-group').appendChild(reloadBtn);
+
+// ── Control buttons wired once at the top level ───────────────────
+// They read from `current*` variables that initDiagram() updates.
+let currentSvg  = null;
+let currentZoom = null;
+let currentW    = window.innerWidth;
+let currentH    = window.innerHeight;
+
+document.getElementById('btn-fit').addEventListener('click', () => fitView());
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  if (currentSvg) currentSvg.transition().duration(300).call(currentZoom.scaleBy, 1.4);
+});
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  if (currentSvg) currentSvg.transition().duration(300).call(currentZoom.scaleBy, 0.7);
+});
+document.getElementById('btn-relax').addEventListener('click', () => {
+  if (!activeSimulation) return;
+  activeSimulation.nodes().forEach(n => { n.fx = null; n.fy = null; });
+  activeSimulation.alpha(0.8).restart();
+  setTimeout(fitView, 3000);
+});
+document.getElementById('btn-export').addEventListener('click', () => {
+  const svgEl = document.getElementById('diagram');
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  styleEl.textContent = "text { font-family: 'JetBrains Mono', monospace; }";
+  clone.prepend(styleEl);
+  const blob = new Blob(
+    ['<?xml version="1.0" encoding="UTF-8"?>\n' + clone.outerHTML],
+    { type: 'image/svg+xml' }
+  );
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'db-diagram.svg';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ── Shared state updated by initDiagram ───────────────────────────
+let activeSimulation = null;
+
+// ── Utility ───────────────────────────────────────────────────────
+function formatType(col) {
+  const t = col.type ?? '';
+  if (col.maxLength && col.maxLength > 0)
+    return `${t}(${col.maxLength === -1 ? 'max' : col.maxLength})`;
+  if (col.numericPrecision != null && ['decimal','numeric','float'].includes(t))
+    return `${t}(${col.numericPrecision}${col.numericScale != null ? ',' + col.numericScale : ''})`;
+  return t;
+}
+
+function fitView() {
+  const layer = document.getElementById('nodes-layer');
+  if (!layer || !currentSvg || !currentZoom) return;
+  const bbox = layer.getBBox();
+  if (!bbox.width || !bbox.height) return;
+  const padding = 80;
+  const scale = Math.min(0.95, Math.min(
+    (currentW - padding * 2) / bbox.width,
+    (currentH - padding * 2) / bbox.height
+  ));
+  const tx = currentW / 2 - scale * (bbox.x + bbox.width  / 2);
+  const ty = currentH / 2 - scale * (bbox.y + bbox.height / 2);
+  currentSvg.transition().duration(700).ease(d3.easeCubicOut)
+    .call(currentZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+// ================================================================
+//  DIAGRAM INITIALISATION  — called each time a schema is loaded
+// ================================================================
+function initDiagram(schema) {
+  // Stop previous simulation if any
+  if (activeSimulation) { activeSimulation.stop(); activeSimulation = null; }
+
+  // Clear previous diagram
+  d3.select('#nodes-layer').selectAll('*').remove();
+  d3.select('#links-layer').selectAll('*').remove();
+
+  // Show reload button
+  reloadBtn.style.display = 'flex';
+
+  // ── Constants ──────────────────────────────────────────────────
+  const TW        = 240;
+  const TH_HEADER = 38;
+  const TH_ROW    = 26;
+  const T_RADIUS  = 6;
+  const PADDING   = 12;
+
+  function tableHeight(t) { return TH_HEADER + t.columns.length * TH_ROW; }
+
+  // ── Normalise schema data ───────────────────────────────────────
+  const fkSet = new Set(schema.relationships.map(r => `${r.fromTable}.${r.fromColumn}`));
+  schema.tables.forEach(t =>
+    t.columns.forEach(c => {
+      c.isPK = !!c.isPK;
+      c.isFk = fkSet.has(`${t.name}.${c.name}`);
+    })
+  );
+
+  // ── D3 nodes & links ────────────────────────────────────────────
+  const nodes = schema.tables.map(t => ({ ...t, id: t.name }));
+  const links = schema.relationships.map(r => ({
+    id:      `${r.fromTable}.${r.fromColumn}>${r.toTable}.${r.toColumn}`,
+    source:  r.fromTable,
+    target:  r.toTable,
+    fromCol: r.fromColumn,
+    toCol:   r.toColumn
+  }));
+
+  // ── SVG & zoom ──────────────────────────────────────────────────
+  currentW = window.innerWidth;
+  currentH = window.innerHeight;
+  const W   = currentW;
+  const H   = currentH;
+
+  const svg = d3.select('#diagram');
+  currentSvg = svg;
+
+  const zoom = d3.zoom()
+    .scaleExtent([0.08, 4])
+    .on('zoom', e => zoomLayer.attr('transform', e.transform));
+
+  svg.call(zoom);
+  currentZoom = zoom;
+
+  const zoomLayer  = d3.select('#zoom-layer');
+  const linksLayer = d3.select('#links-layer');
+  const nodesLayer = d3.select('#nodes-layer');
+
+  // ── Simulation ──────────────────────────────────────────────────
+  const simulation = d3.forceSimulation(nodes)
+    .force('link',      d3.forceLink(links).id(d => d.id).distance(280).strength(0.4))
+    .force('charge',    d3.forceManyBody().strength(-900))
+    .force('center',    d3.forceCenter(W / 2, H / 2))
+    .force('collision', d3.forceCollide().radius(d => Math.max(TW, tableHeight(d)) * 0.65 + 30))
+    .force('x',         d3.forceX(W / 2).strength(0.03))
+    .force('y',         d3.forceY(H / 2).strength(0.03));
+
+  activeSimulation = simulation;
+
+  // ── Render links ────────────────────────────────────────────────
+  const linkEls = linksLayer
+    .selectAll('g.link-group')
+    .data(links)
+    .join('g')
+    .attr('class', 'link-group');
+
+  const linkPaths = linkEls.append('path')
+    .attr('fill', 'none')
+    .attr('stroke', 'rgba(47,129,247,0.45)')
+    .attr('stroke-width', 1.5)
+    .attr('marker-end', 'url(#arrow)')
+    .attr('marker-start', 'url(#dot)')
+    .style('cursor', 'pointer')
+    .on('mouseenter', function() {
+      d3.select(this).attr('stroke','rgba(88,166,255,0.9)').attr('stroke-width',2).attr('marker-end','url(#arrow-hi)');
+    })
+    .on('mouseleave', function() {
+      d3.select(this).attr('stroke','rgba(47,129,247,0.45)').attr('stroke-width',1.5).attr('marker-end','url(#arrow)');
+    });
+
+  // Wider invisible hit area for easier hover
+  linkEls.append('path')
+    .attr('fill', 'none')
+    .attr('stroke', 'transparent')
+    .attr('stroke-width', 12)
+    .style('cursor', 'pointer')
+    .on('mouseenter', function(e, d) { linkPaths.filter(l => l === d).dispatch('mouseenter'); })
+    .on('mouseleave', function(e, d) { linkPaths.filter(l => l === d).dispatch('mouseleave'); });
+
+  // ── Render nodes (tables) ────────────────────────────────────────
+  const nodeEls = nodesLayer
+    .selectAll('g.table-group')
+    .data(nodes)
+    .join('g')
+    .attr('class', 'table-group')
+    .style('cursor', 'grab');
+
+  nodeEls.each(function(d) {
+    const g  = d3.select(this);
+    const th = tableHeight(d);
+
+    // Shadow
+    g.append('rect').attr('x',4).attr('y',6).attr('width',TW).attr('height',th)
+      .attr('rx',T_RADIUS).attr('fill','rgba(0,0,0,0.45)').attr('filter','blur(6px)');
+
+    // Body
+    g.append('rect').attr('class','table-bg')
+      .attr('width',TW).attr('height',th).attr('rx',T_RADIUS)
+      .attr('fill','#161b22').attr('stroke','#30363d').attr('stroke-width',1);
+
+    // Header bg
+    g.append('rect').attr('class','table-header-bg')
+      .attr('width',TW).attr('height',TH_HEADER).attr('rx',T_RADIUS).attr('fill','#1c2128');
+
+    // Cover header bottom corners
+    g.append('rect').attr('y',TH_HEADER-T_RADIUS).attr('width',TW).attr('height',T_RADIUS).attr('fill','#1c2128');
+
+    // Header bottom border
+    g.append('line').attr('x1',0).attr('y1',TH_HEADER).attr('x2',TW).attr('y2',TH_HEADER)
+      .attr('stroke','#30363d').attr('stroke-width',1);
+
+    // Table name
+    g.append('text').attr('x',TW/2).attr('y',TH_HEADER/2+1)
+      .attr('dominant-baseline','middle').attr('text-anchor','middle')
+      .attr('fill','#e6edf3').attr('font-family',"'JetBrains Mono', monospace")
+      .attr('font-size','12px').attr('font-weight','700').attr('letter-spacing','0.03em')
+      .text(d.name);
+
+    // Column rows
+    d.columns.forEach((col, i) => {
+      const ry  = TH_HEADER + i * TH_ROW;
+      const midY = ry + TH_ROW / 2 + 1;
+
+      if (i > 0)
+        g.append('line').attr('x1',0).attr('y1',ry).attr('x2',TW).attr('y2',ry)
+          .attr('stroke','#21262d').attr('stroke-width',1);
+
+      // Hover highlight rect
+      g.append('rect').attr('y',ry).attr('width',TW).attr('height',TH_ROW).attr('fill','transparent')
+        .on('mouseenter', function() { d3.select(this).attr('fill','rgba(47,129,247,0.06)'); })
+        .on('mouseleave', function() { d3.select(this).attr('fill','transparent'); });
+
+      // PK / FK badge
+      if (col.isPK) {
+        g.append('rect').attr('x',PADDING-2).attr('y',midY-7).attr('width',20).attr('height',13).attr('rx',3)
+          .attr('fill','rgba(240,136,62,0.15)').attr('stroke','rgba(240,136,62,0.4)').attr('stroke-width',1);
+        g.append('text').attr('x',PADDING+8).attr('y',midY+1)
+          .attr('dominant-baseline','middle').attr('text-anchor','middle')
+          .attr('fill','#f0883e').attr('font-family',"'JetBrains Mono', monospace")
+          .attr('font-size','8px').attr('font-weight','700').text('PK');
+      } else if (col.isFk) {
+        g.append('rect').attr('x',PADDING-2).attr('y',midY-7).attr('width',20).attr('height',13).attr('rx',3)
+          .attr('fill','rgba(88,166,255,0.12)').attr('stroke','rgba(88,166,255,0.35)').attr('stroke-width',1);
+        g.append('text').attr('x',PADDING+8).attr('y',midY+1)
+          .attr('dominant-baseline','middle').attr('text-anchor','middle')
+          .attr('fill','#58a6ff').attr('font-family',"'JetBrains Mono', monospace")
+          .attr('font-size','8px').attr('font-weight','700').text('FK');
+      }
+
+      const nameX = PADDING + ((col.isPK || col.isFk) ? 26 : 0);
+
+      // Column name
+      g.append('text').attr('x',nameX).attr('y',midY).attr('dominant-baseline','middle')
+        .attr('fill', col.isPK ? '#e6edf3' : '#c9d1d9')
+        .attr('font-family',"'Inter', sans-serif").attr('font-size','11px')
+        .attr('font-weight', col.isPK ? '600' : '400')
+        .text(col.name);
+
+      // Type label
+      g.append('text').attr('x',TW-PADDING).attr('y',midY)
+        .attr('dominant-baseline','middle').attr('text-anchor','end')
+        .attr('fill', col.isNullable === 'YES' ? '#3fb950' : '#6e7681')
+        .attr('font-family',"'JetBrains Mono', monospace").attr('font-size','9.5px')
+        .text(formatType(col));
+    });
+
+    // Outer border on top
+    g.append('rect').attr('class','table-border')
+      .attr('width',TW).attr('height',th).attr('rx',T_RADIUS)
+      .attr('fill','none').attr('stroke','#30363d').attr('stroke-width',1);
+  });
+
+  // Table hover highlight
+  nodeEls
+    .on('mouseenter', function() {
+      d3.select(this).select('.table-border').attr('stroke','#58a6ff').attr('stroke-width',1.5);
+      d3.select(this).select('.table-header-bg').attr('fill','#1f2d3d');
+    })
+    .on('mouseleave', function() {
+      d3.select(this).select('.table-border').attr('stroke','#30363d').attr('stroke-width',1);
+      d3.select(this).select('.table-header-bg').attr('fill','#1c2128');
+    });
+
+  // ── Drag ────────────────────────────────────────────────────────
+  const drag = d3.drag()
+    .on('start', (event, d) => {
+      event.sourceEvent.stopPropagation(); // prevent SVG zoom from stealing the event
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x; d.fy = d.y;
+      d3.select(event.sourceEvent.currentTarget).style('cursor','grabbing');
+    })
+    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+    .on('end',  (event, d) => {
+      if (!event.active) simulation.alphaTarget(0);
+      // Node stays pinned (draw.io behaviour).
+      // Uncomment to release back into simulation:
+      // d.fx = null; d.fy = null;
+      d3.select(event.sourceEvent.currentTarget).style('cursor','grab');
+    });
+
+  nodeEls.call(drag);
+
+  // ── Connection point helpers ─────────────────────────────────────
+  function getConnPoint(node, colName, side) {
+    const colIdx = node.columns.findIndex(c => c.name === colName);
+    const cy = colIdx >= 0
+      ? TH_HEADER + colIdx * TH_ROW + TH_ROW / 2
+      : tableHeight(node) / 2;
+    return { x: (node.x ?? 0) + (side === 'right' ? TW : 0), y: (node.y ?? 0) + cy };
+  }
+
+  function makePath(sp, tp, sx, tx) {
+    const hdist  = Math.abs(tp.x - sp.x);
+    const handle = Math.max(60, Math.min(hdist * 0.55, 220));
+    const sdx = sx < tx ?  handle : -handle;
+    const tdx = sx < tx ? -handle :  handle;
+    return `M ${sp.x} ${sp.y} C ${sp.x+sdx} ${sp.y}, ${tp.x+tdx} ${tp.y}, ${tp.x} ${tp.y}`;
+  }
+
+  // ── Tick ────────────────────────────────────────────────────────
+  simulation.on('tick', () => {
+    nodeEls.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+
+    linkEls.each(function(d) {
+      const src = d.source, tgt = d.target;
+      if (!src || !tgt) return;
+      const sx = src.x ?? 0, tx = tgt.x ?? 0;
+      const srcSide = sx <= tx ? 'right' : 'left';
+      const tgtSide = sx <= tx ? 'left'  : 'right';
+      const sp = getConnPoint(src, d.fromCol, srcSide);
+      const tp = getConnPoint(tgt, d.toCol,   tgtSide);
+      d3.select(this).selectAll('path').attr('d', makePath(sp, tp, sx, tx));
+    });
+  });
+
+  // Auto-fit after layout settles
+  setTimeout(fitView, 2800);
+
+  // Update stats
+  const totalCols = schema.tables.reduce((acc, t) => acc + t.columns.length, 0);
+  document.getElementById('stats').textContent =
+    `${schema.tables.length} tables \u00b7 ${totalCols} columns \u00b7 ${schema.relationships.length} relationships`;
+}
+</script>
+</body>
+</html>
