@@ -24,13 +24,14 @@ SET NOCOUNT ON;
 --     'Order'     -> tables whose name contains "Order"
 --     'Order%'    -> tables whose name starts with "Order"
 --     '%Log'      -> tables whose name ends with "Log"
--- Relationships are included when EITHER end of the FK
--- belongs to a matched table.
+--
+-- Tables directly connected to matched tables via FK are
+-- automatically included (2-pass expansion).
 -- ============================================================
 DECLARE @Filter NVARCHAR(200) = '';
 
 -- ============================================================
--- Resolve the matched table set once so both queries use it
+-- PASS 1: Tables that match the filter directly
 -- ============================================================
 DECLARE @MatchedTables TABLE (TableName SYSNAME, TableSchema SYSNAME);
 
@@ -45,12 +46,44 @@ WHERE
         @Filter = ''
         OR t.TABLE_NAME LIKE '%' + @Filter + '%'
     )
-    -- Uncomment and edit to restrict to a specific schema:
+    -- Uncomment to restrict to a specific schema:
     -- AND t.TABLE_SCHEMA = 'dbo'
 ;
 
 -- ============================================================
--- PART 1: Tables and Columns
+-- PASS 2: Pull in any tables that are connected via FK to
+-- the first-pass results but weren't matched themselves.
+-- This ensures the diagram has both ends of every relationship.
+-- ============================================================
+INSERT INTO @MatchedTables (TableName, TableSchema)
+SELECT DISTINCT
+    it.TABLE_NAME,
+    it.TABLE_SCHEMA
+FROM sys.foreign_keys               fk
+JOIN sys.foreign_key_columns        fkc
+    ON  fk.object_id                = fkc.constraint_object_id
+JOIN sys.tables                     tp
+    ON  fkc.parent_object_id        = tp.object_id
+JOIN sys.tables                     tr
+    ON  fkc.referenced_object_id    = tr.object_id
+-- Join INFORMATION_SCHEMA to get the schema name for the
+-- candidate table (we need it for the columns query later)
+JOIN INFORMATION_SCHEMA.TABLES      it
+    ON  it.TABLE_TYPE               = 'BASE TABLE'
+    AND it.TABLE_NAME IN (tp.name, tr.name)
+WHERE
+    -- At least one end of the FK is already in our matched set
+    (
+        EXISTS (SELECT 1 FROM @MatchedTables m WHERE m.TableName = tp.name)
+        OR
+        EXISTS (SELECT 1 FROM @MatchedTables m WHERE m.TableName = tr.name)
+    )
+    -- But only add the table if it isn't already there
+    AND NOT EXISTS (SELECT 1 FROM @MatchedTables m WHERE m.TableName = it.TABLE_NAME)
+;
+
+-- ============================================================
+-- PART 1: Tables and Columns  (all matched tables, both passes)
 -- ============================================================
 PRINT '--- TABLES ---';
 
@@ -82,8 +115,8 @@ SELECT
             AND pk.TABLE_NAME   = c.TABLE_NAME
             AND pk.TABLE_SCHEMA = c.TABLE_SCHEMA
         WHERE
-            c.TABLE_NAME   = t.TableName
-            AND c.TABLE_SCHEMA = t.TableSchema
+            c.TABLE_NAME    = t.TableName
+            AND c.TABLE_SCHEMA  = t.TableSchema
         ORDER BY c.ORDINAL_POSITION
         FOR JSON PATH
     )                                       AS [columns]
@@ -93,9 +126,7 @@ FOR JSON PATH;
 
 
 -- ============================================================
--- PART 2: Foreign Key Relationships
--- Include a relationship when EITHER the parent (fromTable)
--- OR the referenced (toTable) is in the matched set.
+-- PART 2: Relationships between any two tables in the final set
 -- ============================================================
 PRINT '--- RELATIONSHIPS ---';
 
@@ -119,9 +150,9 @@ JOIN sys.columns                        cr
     ON  fkc.referenced_object_id        = cr.object_id
     AND fkc.referenced_column_id        = cr.column_id
 WHERE
-    -- At least one end of the FK must be in the matched table set
+    -- Both ends must now be present in the final matched set
     EXISTS (SELECT 1 FROM @MatchedTables m WHERE m.TableName = tp.name)
-    OR
+    AND
     EXISTS (SELECT 1 FROM @MatchedTables m WHERE m.TableName = tr.name)
 ORDER BY fk.name
 FOR JSON PATH;
