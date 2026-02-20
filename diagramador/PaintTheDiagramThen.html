@@ -274,6 +274,124 @@
     svg:active { cursor: grabbing; }
 
     /* Table styles applied via SVG attrs in JS */
+
+    /* ── Table Index Panel ───────────────────────── */
+    #table-index {
+      position: fixed;
+      top: 50%;
+      right: 16px;
+      transform: translateY(-50%);
+      z-index: 100;
+      width: 210px;
+      max-height: 70vh;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    #table-index-header {
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #table-index-header label {
+      display: block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    #table-index-filter {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      padding: 5px 8px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #table-index-filter:focus {
+      border-color: var(--accent);
+    }
+
+    #table-index-filter::placeholder {
+      color: var(--text-muted);
+    }
+
+    #table-index-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 4px 0;
+    }
+
+    #table-index-list::-webkit-scrollbar { width: 4px; }
+    #table-index-list::-webkit-scrollbar-track { background: transparent; }
+    #table-index-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .index-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: background 0.1s;
+      border-radius: 0;
+    }
+
+    .index-item:hover {
+      background: var(--surface-2);
+    }
+
+    .index-item.highlighted {
+      background: var(--accent-glow);
+    }
+
+    .index-item-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      opacity: 0.6;
+    }
+
+    .index-item-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .index-item-cols {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    #table-index-empty {
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: center;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -299,6 +417,16 @@
     <button class="ctrl-btn" id="btn-zoom-in" title="Zoom in">+</button>
     <button class="ctrl-btn" id="btn-zoom-out" title="Zoom out">−</button>
   </div>
+</div>
+
+<!-- Table Index Panel -->
+<div id="table-index">
+  <div id="table-index-header">
+    <label>TABLES — double-click to zoom</label>
+    <input id="table-index-filter" type="text" placeholder="Filter tables..." autocomplete="off" spellcheck="false" />
+  </div>
+  <div id="table-index-list"></div>
+  <div id="table-index-empty">No tables match</div>
 </div>
 
 <!-- Schema Input Modal -->
@@ -381,7 +509,7 @@ JSON object like: { &quot;tables&quot;: [...], &quot;relationships&quot;: [...] 
   </g>
 </svg>
 
-<script src="d3.v7.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>
 // ================================================================
 //  SAMPLE SCHEMA
@@ -544,6 +672,7 @@ reloadBtn.addEventListener('click', () => {
   d3.select('#nodes-layer').selectAll('*').remove();
   d3.select('#links-layer').selectAll('*').remove();
   document.getElementById('stats').textContent = '';
+  document.getElementById('table-index').style.display = 'none';
   clearError();
   overlay.style.opacity   = '1';
   overlay.style.transition = '';
@@ -618,6 +747,95 @@ function fitView() {
   const ty = currentH / 2 - scale * (bbox.y + bbox.height / 2);
   currentSvg.transition().duration(700).ease(d3.easeCubicOut)
     .call(currentZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+// Zoom into a specific node by table name
+function zoomToNode(tableName) {
+  if (!currentSvg || !currentZoom) return;
+
+  // Find the node data
+  const nodeEls = d3.select('#nodes-layer').selectAll('g.table-group');
+  let target = null;
+  nodeEls.each(function(d) { if (d.name === tableName) target = d; });
+  if (!target) return;
+
+  const TW        = 240;
+  const TH_HEADER = 38;
+  const TH_ROW    = 26;
+  const tableH    = TH_HEADER + target.columns.length * TH_ROW;
+
+  const scale = Math.min(1.8, Math.min(
+    (currentW * 0.6) / TW,
+    (currentH * 0.6) / tableH
+  ));
+
+  const tx = currentW / 2 - scale * (target.x + TW / 2);
+  const ty = currentH / 2 - scale * (target.y + tableH / 2);
+
+  currentSvg.transition().duration(600).ease(d3.easeCubicOut)
+    .call(currentZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+
+  // Briefly flash the table border to help the user spot it
+  const nodeEl = d3.select('#nodes-layer').selectAll('g.table-group')
+    .filter(d => d.name === tableName);
+  nodeEl.select('.table-border')
+    .attr('stroke', '#f0883e').attr('stroke-width', 2);
+  setTimeout(() => {
+    nodeEl.select('.table-border')
+      .attr('stroke', '#58a6ff').attr('stroke-width', 1.5);
+  }, 600);
+}
+
+// ================================================================
+//  TABLE INDEX PANEL
+// ================================================================
+function buildTableIndex(tables) {
+  const panel    = document.getElementById('table-index');
+  const list     = document.getElementById('table-index-list');
+  const filter   = document.getElementById('table-index-filter');
+  const empty    = document.getElementById('table-index-empty');
+
+  panel.style.display = 'flex';
+  filter.value = '';
+
+  function render(query) {
+    list.innerHTML = '';
+    const q = query.toLowerCase();
+    const filtered = tables.filter(t => t.name.toLowerCase().includes(q));
+
+    empty.style.display = filtered.length === 0 ? 'block' : 'none';
+
+    filtered.forEach(t => {
+      const item = document.createElement('div');
+      item.className = 'index-item';
+      item.innerHTML = `
+        <span class="index-item-dot"></span>
+        <span class="index-item-name" title="${t.name}">${t.name}</span>
+        <span class="index-item-cols">${t.columns.length}</span>
+      `;
+
+      // Single click — highlight the row
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.index-item').forEach(el => el.classList.remove('highlighted'));
+        item.classList.add('highlighted');
+      });
+
+      // Double click — zoom to the table
+      item.addEventListener('dblclick', () => {
+        document.querySelectorAll('.index-item').forEach(el => el.classList.remove('highlighted'));
+        item.classList.add('highlighted');
+        zoomToNode(t.name);
+      });
+
+      list.appendChild(item);
+    });
+  }
+
+  render('');
+  filter.addEventListener('input', () => render(filter.value));
+
+  // Clear filter and re-render when a new schema is loaded
+  filter.value = '';
 }
 
 // ================================================================
@@ -881,6 +1099,9 @@ function initDiagram(schema) {
 
   // Auto-fit after layout settles
   setTimeout(fitView, 2800);
+
+  // Build the table index panel
+  buildTableIndex(schema.tables);
 
   // Update stats
   const totalCols = schema.tables.reduce((acc, t) => acc + t.columns.length, 0);
